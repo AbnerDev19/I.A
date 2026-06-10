@@ -1,160 +1,146 @@
 import streamlit as st
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
+from core import MLP_Zero_Bibliotecas, FUNCOES_ATIVACAO
 
-# ==========================================
-# CONFIGURAÇÃO DE PÁGINA (Estilo Minimalista)
-# ==========================================
-st.set_page_config(page_title="Simulador MLP", layout="wide", initial_sidebar_state="expanded")
+# ── Configuração da Página ────────────────────────────────────────────────────
+st.set_page_config(page_title="Simulador MLP", layout="wide")
 
-# CSS customizado para deixar a interface mais limpa
 st.markdown("""
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .block-container {padding-top: 2rem; padding-bottom: 0rem;}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        color: #37352f;
+        background-color: #ffffff;
+    }
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        transition: opacity 0.2s ease;
+    }
+    .stButton>button:hover { opacity: 0.9; color: white; }
+    hr { border-top: 1px solid #ededed; margin: 1.5rem 0; }
+    h1, h2, h3 { font-weight: 600; }
+    div[data-testid="stMetricValue"] { font-family: monospace; color: #764ba2; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ==========================================
-# NÚCLEO MATEMÁTICO (Sua classe MLP)
-# ==========================================
-def sigmoide_bipolar(x):
-    return 2 / (1 + np.exp(-x)) - 1
+# ── Dados ─────────────────────────────────────────────────────────────────────
+X_dados = [[0, 0], [0, 1], [1, 0], [1, 1]]
 
-def d_sigmoide_bipolar(fx):
-    return 0.5 * (1 - fx ** 2)
-
-class MLP:
-    def __init__(self, n_entrada=2, n_oculta=4, n_saida=1, taxa_aprendizagem=0.2, tolerancia=0.001, max_epocas=20000, seed=None):
-        self.n_entrada = n_entrada
-        self.n_oculta = n_oculta
-        self.n_saida = n_saida
-        self.lr = taxa_aprendizagem
-        self.tol = tolerancia
-        self.max_epocas = max_epocas
-        if seed is not None:
-            np.random.seed(seed)
-        self.W1 = np.random.uniform(-1, 1, (self.n_entrada + 1, self.n_oculta))
-        self.W2 = np.random.uniform(-1, 1, (self.n_oculta + 1, self.n_saida))
-        self.historico_erro = []
-
-    def _forward(self, x):
-        x_bias = np.concatenate([[1.0], x])
-        net_oculta = x_bias @ self.W1
-        saida_oculta = sigmoide_bipolar(net_oculta)
-        h_bias = np.concatenate([[1.0], saida_oculta])
-        net_saida = h_bias @ self.W2
-        saida_final = sigmoide_bipolar(net_saida)
-        return x_bias, saida_oculta, h_bias, saida_final
-
-    def treinar(self, X, y):
-        for epoca in range(self.max_epocas):
-            erro_total = 0.0
-            for xi, yi in zip(X, y):
-                x_bias, saida_oculta, h_bias, saida_final = self._forward(xi)
-                erro = yi - saida_final
-                delta_saida = erro * d_sigmoide_bipolar(saida_final)
-                delta_oculta = d_sigmoide_bipolar(saida_oculta) * (self.W2[1:] @ delta_saida)
-                self.W2 += self.lr * np.outer(h_bias, delta_saida)
-                self.W1 += self.lr * np.outer(x_bias, delta_oculta)
-                erro_total += 0.5 * np.sum(erro ** 2)
-            self.historico_erro.append(erro_total)
-            if erro_total < self.tol:
-                return epoca + 1
-        return self.max_epocas
-
-    def prever(self, X):
-        resultados = []
-        for xi in X:
-            _, _, _, saida = self._forward(xi)
-            resultados.append(saida[0])
-        return np.array(resultados)
-
-# ==========================================
-# DADOS DAS FUNÇÕES LÓGICAS
-# ==========================================
-X_dados = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
 funcoes_logicas = {
-    'XOR':  np.array([[-1.0], [1.0], [1.0], [-1.0]]),
-    'AND':  np.array([[-1.0], [-1.0], [-1.0], [1.0]]),
-    'OR':   np.array([[-1.0], [1.0], [1.0], [1.0]]),
-    'NAND': np.array([[1.0], [1.0], [1.0], [-1.0]]),
-    'NOR':  np.array([[1.0], [-1.0], [-1.0], [-1.0]]),
+    'XOR':  [-1.0,  1.0,  1.0, -1.0],
+    'AND':  [-1.0, -1.0, -1.0,  1.0],
+    'OR':   [-1.0,  1.0,  1.0,  1.0],
+    'NAND': [ 1.0,  1.0,  1.0, -1.0],
+    'NOR':  [ 1.0, -1.0, -1.0, -1.0],
 }
 
-# ==========================================
-# INTERFACE PRINCIPAL
-# ==========================================
+# ── Layout ────────────────────────────────────────────────────────────────────
 st.title("Simulador de Retropropagação")
+st.markdown("Implementação de funções lógicas via MLP — arquitetura nativa sem dependências matemáticas.")
 st.markdown("---")
 
-# Controles na barra lateral
+# ── Menu Lateral ──────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.subheader("Parâmetros da Rede")
+    st.markdown("### Configurações do Modelo")
     funcao_selecionada = st.selectbox("Função Lógica", options=list(funcoes_logicas.keys()))
-    
-    st.markdown("---")
-    lr_input = st.slider("Taxa de Aprendizagem", min_value=0.1, max_value=1.0, value=0.2, step=0.1)
-    tol_input = st.number_input("Erro Tolerado", value=0.001, format="%.4f")
-    neuronios_input = st.slider("Neurônios na Camada Oculta", min_value=2, max_value=10, value=4, step=1)
-    seed_input = st.number_input("Semente (Seed)", value=3, step=1)
-    
-    st.markdown("---")
-    btn_treinar = st.button("Executar Treinamento", type="primary", use_container_width=True)
+    nome_ativacao      = st.selectbox("Função de Ativação", options=list(FUNCOES_ATIVACAO.keys()))
 
-# Área de Resultados
+    st.markdown("---")
+    lr_input        = st.slider("Taxa de Aprendizagem", 0.1, 1.0, 0.2, 0.1)
+    tol_input       = st.number_input("Erro Tolerado", value=0.001, format="%.4f")
+    neuronios_input = st.slider("Neurônios (Camada Oculta)", 2, 10, 4, 1)
+    seed_input      = st.number_input("Semente de Inicialização", value=42, step=1)
+
+    st.markdown("---")
+    btn_treinar = st.button("Executar Treinamento", use_container_width=True)
+
+# ── Resultados ────────────────────────────────────────────────────────────────
 if btn_treinar:
     y_alvo = funcoes_logicas[funcao_selecionada]
-    
-    # Instancia e treina
-    rede = MLP(n_oculta=int(neuronios_input), taxa_aprendizagem=lr_input, tolerancia=tol_input, seed=int(seed_input))
-    epocas = rede.treinar(X_dados, y_alvo)
-    erro_final = rede.historico_erro[-1]
-    
-    # Previsões para a tabela
-    previsoes = rede.prever(X_dados)
-    
-    # Divide a tela em duas colunas principais
-    col_metricas, col_grafico = st.columns([1, 2])
-    
-    with col_metricas:
-        st.metric(label="Ciclos até Convergência", value=f"{epocas} épocas")
-        st.metric(label="Erro Quadrático Final", value=f"{erro_final:.6f}")
-        
-        st.markdown("### Validação")
-        # Montar tabela de dados limpa usando Pandas
-        df_resultados = pd.DataFrame({
-            "Entrada A": X_dados[:, 0],
-            "Entrada B": X_dados[:, 1],
-            "Esperado": [1 if y > 0 else 0 for y in y_alvo.flatten()],
-            "Saída da Rede": np.round(previsoes, 4),
-            "Classificação": [1 if p > 0 else 0 for p in previsoes]
-        })
-        st.dataframe(df_resultados, hide_index=True, use_container_width=True)
 
-    with col_grafico:
-        # Gráfico minimalista
-        fig, ax = plt.subplots(figsize=(8, 5))
-        
-        # Cores baseadas no estilo Gradient/Notion (simples e elegantes)
-        ax.plot(rede.historico_erro, color='#6366f1', linewidth=2.5)
-        
-        # Removendo bordas desnecessárias (Spines)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#e5e7eb')
-        ax.spines['bottom'].set_color('#e5e7eb')
-        
-        ax.set_title(f"Convergência do Erro - {funcao_selecionada}", fontsize=14, pad=15, loc='left', color='#374151')
-        ax.set_xlabel("Épocas", color='#6b7280')
-        ax.set_ylabel("Erro Total", color='#6b7280')
-        ax.grid(True, axis='y', linestyle='--', alpha=0.5, color='#d1d5db')
-        
-        st.pyplot(fig)
+    rede = MLP_Zero_Bibliotecas(
+        n_entrada=2,
+        n_oculta=int(neuronios_input),
+        taxa_aprendizagem=lr_input,
+        seed=int(seed_input),
+        nome_funcao=nome_ativacao,
+    )
+
+    with st.spinner("Calculando épocas..."):
+        epocas, historico_erros = rede.treinar(
+            X_dados, y_alvo, max_epocas=20000, tolerancia=tol_input
+        )
+        previsoes = rede.prever(X_dados)
+
+    convergiu   = historico_erros[-1] < tol_input
+    status_icon = "✅" if convergiu else "⚠️"
+
+    col1, col2 = st.columns([1, 2.5])
+
+    with col1:
+        st.markdown("### Métricas")
+        st.metric("Ciclos de Treino", epocas)
+        st.metric("Erro Final", f"{historico_erros[-1]:.6f}")
+        st.metric("Status", f"{status_icon} {'Convergiu' if convergiu else 'Não convergiu'}")
+
+        st.markdown("### Validação")
+        tabela = "| Entrada | Esperado | Calculado | Classe |\n| :--- | :--- | :--- | :--- |\n"
+        for i in range(len(X_dados)):
+            entrada_str = f"[{X_dados[i][0]}, {X_dados[i][1]}]"
+            esperado    = 1 if y_alvo[i] > 0 else 0
+            calculado   = f"{previsoes[i]:.4f}"
+            classe      = 1 if previsoes[i] > 0 else 0
+            ok          = "✅" if classe == esperado else "❌"
+            tabela += f"| {entrada_str} | {esperado} | {calculado} | **{classe}** {ok} |\n"
+        st.markdown(tabela)
+
+    with col2:
+        st.markdown("### Convergência do Erro")
+        st.line_chart(historico_erros, height=400, color="#764ba2")
+
+    # ── Experimento A ──────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Experimento A — Variando nº de neurônios na camada oculta")
+    st.markdown("*(lr=0.2, tol=0.001, seed=42, XOR)*")
+
+    tab_a = "| Neurônios | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
+    for n in [2, 3, 4, 5]:
+        r = MLP_Zero_Bibliotecas(n_oculta=n, taxa_aprendizagem=0.2, seed=42)
+        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
+        conv = "✅" if hist[-1] < 0.001 else "❌"
+        tab_a += f"| {n} | {ep} | {hist[-1]:.6f} | {conv} |\n"
+    st.markdown(tab_a)
+
+    # ── Experimento B ──────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Experimento B — Variando taxa de aprendizagem")
+    st.markdown("*(n_oculta=4, tol=0.001, seed=42, XOR)*")
+
+    tab_b = "| Taxa | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
+    for lr in [0.1, 0.2, 0.3, 0.4, 0.5]:
+        r = MLP_Zero_Bibliotecas(n_oculta=4, taxa_aprendizagem=lr, seed=42)
+        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
+        conv = "✅" if hist[-1] < 0.001 else "❌"
+        tab_b += f"| {lr} | {ep} | {hist[-1]:.6f} | {conv} |\n"
+    st.markdown(tab_b)
+
+    # ── Experimento C ──────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Experimento C — Influência da inicialização dos pesos (seeds)")
+    st.markdown("*(n_oculta=4, lr=0.2, tol=0.001, XOR)*")
+
+    tab_c = "| Seed | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
+    for s in [0, 1, 2, 3, 4]:
+        r = MLP_Zero_Bibliotecas(n_oculta=4, taxa_aprendizagem=0.2, seed=s)
+        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
+        conv = "✅" if hist[-1] < 0.001 else "❌"
+        tab_c += f"| {s} | {ep} | {hist[-1]:.6f} | {conv} |\n"
+    st.markdown(tab_c)
 
 else:
-    # Estado inicial vazio
-    st.info("Ajuste os parâmetros na barra lateral e clique em **Executar Treinamento** para visualizar os resultados.")
+    st.info("Configure os parâmetros no menu lateral e clique em **Executar Treinamento**.")
