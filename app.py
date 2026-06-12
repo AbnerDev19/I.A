@@ -1,5 +1,5 @@
 import streamlit as st
-from core import MLP_Zero_Bibliotecas, FUNCOES_ATIVACAO
+from core import MLP, FUNCOES_ATIVACAO
 
 # ── Configuração da Página ────────────────────────────────────────────────────
 st.set_page_config(page_title="Simulador MLP", layout="wide")
@@ -41,7 +41,7 @@ funcoes_logicas = {
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 st.title("Simulador de Retropropagação")
-st.markdown("Implementação de funções lógicas via MLP — arquitetura nativa sem dependências matemáticas.")
+st.markdown("Implementação de funções lógicas via MLP otimizada com NumPy.")
 st.markdown("---")
 
 # ── Menu Lateral ──────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ with st.sidebar:
     nome_ativacao      = st.selectbox("Função de Ativação", options=list(FUNCOES_ATIVACAO.keys()))
 
     st.markdown("---")
-    lr_input        = st.slider("Taxa de Aprendizagem", 0.1, 1.0, 0.2, 0.1)
+    lr_input        = st.slider("Taxa de Aprendizagem", 0.05, 1.0, 0.2, 0.05)
     tol_input       = st.number_input("Erro Tolerado", value=0.001, format="%.4f")
     neuronios_input = st.slider("Neurônios (Camada Oculta)", 2, 10, 4, 1)
     seed_input      = st.number_input("Semente de Inicialização", value=42, step=1)
@@ -63,7 +63,7 @@ with st.sidebar:
 if btn_treinar:
     y_alvo = funcoes_logicas[funcao_selecionada]
 
-    rede = MLP_Zero_Bibliotecas(
+    rede = MLP(
         n_entrada=2,
         n_oculta=int(neuronios_input),
         taxa_aprendizagem=lr_input,
@@ -73,7 +73,7 @@ if btn_treinar:
 
     with st.spinner("Calculando épocas..."):
         epocas, historico_erros = rede.treinar(
-            X_dados, y_alvo, max_epocas=20000, tolerancia=tol_input
+            X_dados, y_alvo, max_epocas=10000, tolerancia=tol_input
         )
         previsoes = rede.prever(X_dados)
 
@@ -102,45 +102,6 @@ if btn_treinar:
     with col2:
         st.markdown("### Convergência do Erro")
         st.line_chart(historico_erros, height=400, color="#764ba2")
-
-    # ── Experimento A ──────────────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("Experimento A — Variando nº de neurônios na camada oculta")
-    st.markdown("*(lr=0.2, tol=0.001, seed=42, XOR)*")
-
-    tab_a = "| Neurônios | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
-    for n in [2, 3, 4, 5]:
-        r = MLP_Zero_Bibliotecas(n_oculta=n, taxa_aprendizagem=0.2, seed=42)
-        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
-        conv = "✅" if hist[-1] < 0.001 else "❌"
-        tab_a += f"| {n} | {ep} | {hist[-1]:.6f} | {conv} |\n"
-    st.markdown(tab_a)
-
-    # ── Experimento B ──────────────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("Experimento B — Variando taxa de aprendizagem")
-    st.markdown("*(n_oculta=4, tol=0.001, seed=42, XOR)*")
-
-    tab_b = "| Taxa | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
-    for lr in [0.1, 0.2, 0.3, 0.4, 0.5]:
-        r = MLP_Zero_Bibliotecas(n_oculta=4, taxa_aprendizagem=lr, seed=42)
-        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
-        conv = "✅" if hist[-1] < 0.001 else "❌"
-        tab_b += f"| {lr} | {ep} | {hist[-1]:.6f} | {conv} |\n"
-    st.markdown(tab_b)
-
-    # ── Experimento C ──────────────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("Experimento C — Influência da inicialização dos pesos (seeds)")
-    st.markdown("*(n_oculta=4, lr=0.2, tol=0.001, XOR)*")
-
-    tab_c = "| Seed | Épocas | Erro Final | Convergiu? |\n| :---: | :---: | :---: | :---: |\n"
-    for s in [0, 1, 2, 3, 4]:
-        r = MLP_Zero_Bibliotecas(n_oculta=4, taxa_aprendizagem=0.2, seed=s)
-        ep, hist = r.treinar(X_dados, funcoes_logicas['XOR'], tolerancia=0.001)
-        conv = "✅" if hist[-1] < 0.001 else "❌"
-        tab_c += f"| {s} | {ep} | {hist[-1]:.6f} | {conv} |\n"
-    st.markdown(tab_c)
 
 else:
     st.info("Configure os parâmetros no menu lateral e clique em **Executar Treinamento**.")

@@ -1,53 +1,27 @@
-# Constante de Euler para substituir a biblioteca math
-E = 2.718281828459045
+import numpy as np
 
-class GeradorAleatorio:
-    def __init__(self, seed=42):
-        self.estado = seed
-
-    def aleatorio(self):
-        a = 1103515245
-        c = 12345
-        m = 2**31
-        self.estado = (a * self.estado + c) % m
-        return self.estado / m
-
-    def uniform(self, min_val, max_val):
-        return min_val + (max_val - min_val) * self.aleatorio()
-
-# ── Funções de Ativação ────────────────────────────────────────────────────────
+# ── Funções de Ativação (Vetorizadas com NumPy) ─────────────────────────
 
 def sigmoide_binaria(x):
-    """f(x) = 1 / (1 + e^-x)  →  saída em (0, 1)"""
-    if x < -50: return 0.0
-    if x > 50:  return 1.0
-    return 1.0 / (1.0 + (E ** -x))
+    # np.clip previne erros de overflow matemático (valores muito grandes)
+    x = np.clip(x, -500, 500)
+    return 1.0 / (1.0 + np.exp(-x))
 
 def d_sigmoide_binaria(fx):
-    """f'(x) = f(x) * (1 - f(x))"""
     return fx * (1.0 - fx)
 
 def sigmoide_bipolar(x):
-    """f(x) = 2/(1 + e^-x) - 1  →  saída em (-1, 1)"""
-    if x < -50: return -1.0
-    if x > 50:  return  1.0
-    return (2.0 / (1.0 + (E ** -x))) - 1.0
+    x = np.clip(x, -500, 500)
+    return (2.0 / (1.0 + np.exp(-x))) - 1.0
 
 def d_sigmoide_bipolar(fx):
-    """f'(x) = 0.5 * (1 - f(x)^2)"""
-    return 0.5 * (1.0 - fx * fx)
+    return 0.5 * (1.0 - fx**2)
 
 def tangente_hiperbolica(x):
-    """tanh(x) = (e^x - e^-x) / (e^x + e^-x)  →  saída em (-1, 1)"""
-    if x < -50: return -1.0
-    if x > 50:  return  1.0
-    ep = E **  x
-    en = E ** -x
-    return (ep - en) / (ep + en)
+    return np.tanh(x)
 
 def d_tangente_hiperbolica(fx):
-    """tanh'(x) = 1 - tanh(x)^2"""
-    return 1.0 - fx * fx
+    return 1.0 - fx**2
 
 # Mapa para uso dinâmico
 FUNCOES_ATIVACAO = {
@@ -56,80 +30,75 @@ FUNCOES_ATIVACAO = {
     'Tangente Hiperbólica':(tangente_hiperbolica, d_tangente_hiperbolica),
 }
 
-# ── Rede MLP ──────────────────────────────────────────────────────────────────
+# ── Rede MLP Otimizada com NumPy ──────────────────────────────────────────
 
-class MLP_Zero_Bibliotecas:
+class MLP:
     def __init__(self, n_entrada=2, n_oculta=4, taxa_aprendizagem=0.2,
                  seed=42, nome_funcao='Sigmóide Bipolar'):
         self.lr = taxa_aprendizagem
         self.n_entrada = n_entrada
-        self.n_oculta  = n_oculta
+        self.n_oculta = n_oculta
         self.ativacao, self.d_ativacao = FUNCOES_ATIVACAO[nome_funcao]
 
-        rng = GeradorAleatorio(seed)
+        # Fixar a semente aleatória para reprodutibilidade dos resultados
+        np.random.seed(seed)
 
-        self.W1 = []
-        for _ in range(n_entrada + 1):       # +1 para bias
-            linha = [rng.uniform(-1.0, 1.0) for _ in range(n_oculta)]
-            self.W1.append(linha)
+        # Inicialização dos pesos e bias (viés)
+        self.W1 = np.random.uniform(-1.0, 1.0, (n_entrada, n_oculta))
+        self.b1 = np.random.uniform(-1.0, 1.0, (1, n_oculta))
 
-        self.W2 = []
-        for _ in range(n_oculta + 1):        # +1 para bias
-            self.W2.append([rng.uniform(-1.0, 1.0)])
+        self.W2 = np.random.uniform(-1.0, 1.0, (n_oculta, 1))
+        self.b2 = np.random.uniform(-1.0, 1.0, (1, 1))
 
-    def forward(self, x):
-        x_bias = [1.0] + x
+    def forward(self, X):
+        X = np.atleast_2d(X)
+        
+        # Propagação Camada Oculta
+        self.net_h = np.dot(X, self.W1) + self.b1
+        self.out_h = self.ativacao(self.net_h)
+        
+        # Propagação Camada de Saída
+        self.net_o = np.dot(self.out_h, self.W2) + self.b2
+        self.out_o = self.ativacao(self.net_o)
+        
+        return self.out_o
 
-        saida_oculta = []
-        for j in range(self.n_oculta):
-            net = sum(x_bias[i] * self.W1[i][j] for i in range(len(x_bias)))
-            saida_oculta.append(self.ativacao(net))
-
-        h_bias = [1.0] + saida_oculta
-
-        net_saida = sum(h_bias[i] * self.W2[i][0] for i in range(len(h_bias)))
-        saida_final = self.ativacao(net_saida)
-
-        return x_bias, saida_oculta, h_bias, saida_final
+    def backward(self, X, y):
+        X = np.atleast_2d(X)
+        y = np.atleast_2d(y)
+        
+        # Erro na saída
+        erro = y - self.out_o
+        delta_saida = erro * self.d_ativacao(self.out_o)
+        
+        # Erro propagado para a camada oculta
+        erro_oculto = np.dot(delta_saida, self.W2.T)
+        delta_oculta = erro_oculto * self.d_ativacao(self.out_h)
+        
+        # Atualização dos pesos (Descida do Gradiente)
+        self.W2 += self.lr * np.dot(self.out_h.T, delta_saida)
+        self.b2 += self.lr * np.sum(delta_saida, axis=0, keepdims=True)
+        self.W1 += self.lr * np.dot(X.T, delta_oculta)
+        self.b1 += self.lr * np.sum(delta_oculta, axis=0, keepdims=True)
+        
+        # Erro Quadrático Médio
+        return np.mean(erro**2)
 
     def treinar(self, X, y, max_epocas=20000, tolerancia=0.001):
+        X = np.array(X)
+        # Transforma o array unidimensional de y numa matriz coluna (N, 1)
+        y = np.array(y).reshape(-1, 1)
+        
         historico_erro = []
         for epoca in range(max_epocas):
-            erro_total = 0.0
-
-            for index in range(len(X)):
-                xi = X[index]
-                yi = y[index]
-
-                x_bias, saida_oculta, h_bias, saida_final = self.forward(xi)
-
-                erro = yi - saida_final
-                erro_total += 0.5 * (erro * erro)
-
-                # Fase Backward ─ camada de saída
-                delta_saida = erro * self.d_ativacao(saida_final)
-
-                # Fase Backward ─ camada oculta
-                delta_oculta = []
-                for j in range(self.n_oculta):
-                    peso_w2 = self.W2[j + 1][0]   # pula o bias (índice 0)
-                    delta = self.d_ativacao(saida_oculta[j]) * peso_w2 * delta_saida
-                    delta_oculta.append(delta)
-
-                # Atualização W2
-                for i in range(len(h_bias)):
-                    self.W2[i][0] += self.lr * h_bias[i] * delta_saida
-
-                # Atualização W1
-                for i in range(len(x_bias)):
-                    for j in range(self.n_oculta):
-                        self.W1[i][j] += self.lr * x_bias[i] * delta_oculta[j]
-
+            self.forward(X)
+            erro_total = self.backward(X, y)
             historico_erro.append(erro_total)
+            
             if erro_total < tolerancia:
                 return epoca + 1, historico_erro
 
         return max_epocas, historico_erro
 
     def prever(self, X):
-        return [self.forward(xi)[3] for xi in X]
+        return self.forward(np.array(X)).flatten().tolist()
